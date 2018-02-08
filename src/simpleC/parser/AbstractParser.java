@@ -30,17 +30,29 @@ public abstract class AbstractParser {
         }
     }
 
-    private List<Function<ParsingState, ParsingResult>> branches;
+    private List<ParsingBranch> branches;
 
-    private ParsingResult parseBranch(ParsingState state, List<String> childWords, List<String> wordQuantifier, List<String> other, int branch) {
+    private static List<Memo> memos = new LinkedList<>();
+
+    private parseWord(ParsingState state, String identifier, int branch) {
+        Memo memo = memos.stream().filter(m -> m.position == state.position && m.identifier.equals(identifier) && m.branch == branch)
+                .findAny().orElse(null);
+        if (memo != null) {
+            return memo.word;
+        }
+        Parsers.getParser(identifier).read(state.text);
+    }
+
+    private ParsingResult parseBranch(ParsingState state, int branch) {
+        ParsingBranch b = branches.get(branch);
         List<String> stringResults = new LinkedList<>();
         List<List<AbstractWord>> wordResults = new LinkedList<>();
-        for (int i = 0; i < childWords.size(); i++) {
-            if (childWords.get(i) != null) {
-                AbstractParser parser = Parsers.getParser(childWords.get(i));
+        for (int i = 0; i < b.childWords.size(); i++) {
+            if (b.childWords.get(i) != null) {
+                AbstractParser parser = Parsers.getParser(b.childWords.get(i));
                 AbstractWord word = parser.readInternal(state);
                 List<AbstractWord> words = new LinkedList<>();
-                String quantifier = wordQuantifier.get(i);
+                String quantifier = b.wordQuantifier.get(i);
                 if (quantifier == null) {
                     if (word == null) {
                         return null;
@@ -68,8 +80,8 @@ public abstract class AbstractParser {
                 }
                 wordResults.add(words);
             }
-            if (other.get(i) != null) {
-                Pattern pattern = Pattern.compile("\\s*(" + Pattern.quote(other.get(i)) + ")\\s*");
+            if (b.other.get(i) != null) {
+                Pattern pattern = Pattern.compile("\\s*(" + Pattern.quote(b.other.get(i)) + ")\\s*");
                 Matcher matcher = pattern.matcher(state.text);
                 if (!matcher.find()) {
                     return null;
@@ -84,9 +96,7 @@ public abstract class AbstractParser {
     private void prepareBranches() {
         branches = new LinkedList<>();
         String[] textBranches = combinator.split("\\|");
-        for (int i = 0; i < textBranches.length; i++) {
-            final int branch = i;
-            String textBranch = textBranches[branch];
+        for (String textBranch: textBranches) {
             Pattern stepper = Pattern.compile("\\s*((<[^>]+>)([*+?])?)?\\s*([^<]+)?\\s*");
             Matcher matcher = stepper.matcher(textBranch);
             List<String> childWords = new LinkedList<>();
@@ -99,14 +109,11 @@ public abstract class AbstractParser {
                     other.add(matcher.group(4));
                 }
             }
-            branches.add((ParsingState inputState) -> {
-                ParsingState clonedState = inputState.cloneState();
-                ParsingResult result = parseBranch(clonedState, childWords, wordQuantifier, other, branch);
-                if (result != null) {
-                    inputState.fix(clonedState);
-                }
-                return result;
-            });
+            ParsingBranch branch = new ParsingBranch();
+            branch.childWords = childWords;
+            branch.wordQuantifier = wordQuantifier;
+            branch.other = other;
+            branches.add(branch);
         }
     }
 
@@ -147,38 +154,28 @@ public abstract class AbstractParser {
 
     public class ParsingState {
         public String text;
-
-        public List<MemoResult> results = new LinkedList<>();
-
-        public boolean completed;
+        public int position;
 
         ParsingState(String text) {
             this.text = text;
         }
 
-        public ParsingState getNextState(int branch) {
-            ParsingState state = new ParsingState(this.text);
-            return state;
+        public ParsingState cloneState() {
+            return new ParsingState(this.text);
         }
 
-        public MemoResult getMemoResult(String identifier, int branch) {
-            return results.stream().filter(r -> r.identifier.equals(identifier) && r.branch == branch)
-                    .findAny().orElse(null);
-        }
-
-        public void addMemoResult(MemoResult res) {
-            if (res.nextState.text == text) {
-                this
-            }
-            results.add(res);
+        public void fix(ParsingState state) {
+            int offset = text.length() - state.text.length();
+            text = state.text;
+            position += offset;
         }
     }
 
-    public class MemoResult {
-        public String identifier;
-        public AbstractWord result;
-        public int branch;
-        public ParsingState nextState;
+    private class Memo {
+        int position;
+        String identifier;
+        int branch;
+        AbstractWord word;
     }
 
     class ParsingResult {
@@ -191,5 +188,11 @@ public abstract class AbstractParser {
             this.wordResults = wordResults;
             this.branch = branch;
         }
+    }
+
+    private class ParsingBranch {
+        public List<String> childWords;
+        public List<String> wordQuantifier;
+        public List<String> other;
     }
 }

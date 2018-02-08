@@ -1,4 +1,4 @@
-<program> ::= {<external-declaration>}*
+<program> ::= { <external-declaration>* }
 
 <external-declaration> ::= <function-definition>
                          | <declaration>
@@ -36,8 +36,10 @@
 
 <primary-expression> ::= <identifier>
                        | <constant>
-					   | <identifier> ( {<expression>}* )
+					   | <identifier> ( <expression-list> )
                        | ( <expression> )
+
+<expression-list> ::= <epxression> | <expression> , <expression-list>
 
 <constant> ::= <integer-constant>
              | <character-constant>
